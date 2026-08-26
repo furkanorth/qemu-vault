@@ -20,12 +20,12 @@ Distros other than Debian have to build from source for now.
   
 ## Usage
 Commands:
-  qemu-vault <vm>                                      Run a saved VM
-  qemu-vault --help    | -h                            Show this screen
-  qemu-vault --list    | -l                            Show VM list
-  qemu-vault --add     | -a <name> <qemu parameters>   Save a VM
-  qemu-vault --version | -v                            Show the version
-  qemu-vault --remove  | -r <name>                     Remove a VM
+- qemu-vault <vm>                                      Run a saved VM
+- qemu-vault --help    | -h                            Show this screen
+- qemu-vault --list    | -l                            Show VM list
+- qemu-vault --add     | -a <name> <qemu parameters>   Save a VM
+- qemu-vault --version | -v                            Show the version
+- qemu-vault --remove  | -r <name>                     Remove a VM
 
 ## License
 qemu-vault is licensed under the MIT License.
