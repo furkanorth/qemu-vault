@@ -1,9 +1,48 @@
-// qemu-vault is an unofficial QEMU tool for saving and launching VMs by name.
+/* qemu-vault v1.1 source code
+ ensure you have QEMU installed, if not install it first
+ this software is distant from the official QEMU project, and is not affiliated with it in any way!
+ this software is licensed under the MIT license, see LICENSE for details */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+
+#ifndef __linux__
+#ifndef __unix__
+#error "qemu-vault currently supports only UNIX-like systems" 
+#endif
+#endif
+
+static int qemu_check(void)
+{
+    return system("command -v qemu-system-x86_64 >/dev/null 2>&1") == 0; // cheap check
+}
+
+static int vm_name_exists(const char *cfg_file, const char *name) 
+{
+    FILE *config = fopen(cfg_file, "r");
+    char line[1024];
+
+    if (config == NULL) {
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), config) != NULL) {
+        char *separator = strchr(line, '|');
+
+        if (separator != NULL) {
+            *separator = '\0';
+            if (strcmp(line, name) == 0) {
+                fclose(config);
+                return 1;
+            }
+        }
+    }
+
+    fclose(config);
+    return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -14,12 +53,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    char config_dir[512];
-    char config_file[512];
+    char cfg_dir[512];
+    char cfg_file[512];
 
-    snprintf(config_dir, sizeof(config_dir),
+    snprintf(cfg_dir, sizeof(cfg_dir),
             "%s/.config/qemu-vault/", home);
-    snprintf(config_file, sizeof(config_file),
+    snprintf(cfg_file, sizeof(cfg_file),
             "%s/.config/qemu-vault/config", home);
 
     if (argc < 2) {
@@ -29,8 +68,8 @@ int main(int argc, char *argv[])
 
     if (strcmp(argv[1], "--help") == 0 ||
         strcmp(argv[1], "-h") == 0) {
-        printf("qemu-vault - Unofficial QEMU Virtual Machine Manager\n");
-        printf("====================================================\n");
+        printf("qemu-vault\n");
+        printf("==========\n"); 
         printf("Usage:\n");
         printf("  qemu-vault <vm>                                      Run a saved VM\n");
         printf("  qemu-vault --help    | -h                            Show this screen\n");
@@ -38,12 +77,15 @@ int main(int argc, char *argv[])
         printf("  qemu-vault --add     | -a <name> <qemu parameters>   Save a VM\n");
         printf("  qemu-vault --version | -v                            Show the version\n");
         printf("  qemu-vault --remove  | -r <name>                     Remove a VM\n");
+        printf("Config file: '%s' can be edited to modify VM parameters\n", cfg_file);
         return 0;
     }
 
     if (strcmp(argv[1], "--version") == 0 ||
         strcmp(argv[1], "-v") == 0) {
-        printf("qemu-vault: 1.0\n");
+        printf("qemu-vault, version: 1.1, Copyright (c) 2026 furkanorth\n");
+        printf("This software is licensed under the MIT license\n");
+        printf("This software is distant from the official QEMU project, and is not affiliated with it in any way!\n");
         return 0;
     }
 
@@ -55,19 +97,19 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    FILE *config = fopen(config_file, "r");
+    FILE *config = fopen(cfg_file, "r");
 
     if (config == NULL) {
-        printf("No config file found\n");
+        printf("No config file found, could be a path error\n");
         return 1;
     }
 
-    char temp_file[512];
+    char tmp_file[512];
 
-    snprintf(temp_file, sizeof(temp_file),
-             "%s.tmp", config_file);
+    snprintf(tmp_file, sizeof(tmp_file),
+             "%s.tmp", cfg_file);
 
-    FILE *temp = fopen(temp_file, "w");
+    FILE *temp = fopen(tmp_file, "w");
 
     if (temp == NULL) {
         perror("No temp file found");
@@ -104,15 +146,15 @@ int main(int argc, char *argv[])
     fclose(temp);
 
     if (!found) {
-        remove(temp_file);
+        remove(tmp_file);
         printf("VM not found: %s\ncheck the name!\n", argv[2]);
         return 1;
     }
 
-    remove(config_file);
-    rename(temp_file, config_file);
+    remove(cfg_file);
+    rename(tmp_file, cfg_file);
 
-    printf("VM removed: %s\n", argv[2]);
+    printf("VM removed: %s\nTo edit the config file : %s\n", argv[2], cfg_file);
 
     return 0;
 }
@@ -120,10 +162,10 @@ int main(int argc, char *argv[])
     else if (strcmp(argv[1], "-l") == 0 ||
          strcmp(argv[1], "--list") == 0) {
 
-    FILE *config = fopen(config_file, "r");
+    FILE *config = fopen(cfg_file, "r");
 
     if (config == NULL) {
-        printf("No saved VMs found!\n");
+        printf("Config file not created but can be created with -a flag\n");
         return 0;
     }
 
@@ -150,24 +192,39 @@ int main(int argc, char *argv[])
         printf("Usage: qemu-vault -a <name> <qemu parameters>\n");
         return 1;
     }
-        mkdir(config_dir, 0755);
-        FILE *config = fopen(config_file, "a");
+
+        if (strchr(argv[2], '|') != NULL || strchr(argv[2], '\n') != NULL) {
+            printf("VM name cannot contain '|' or a newline\n");
+            return 1;
+        }
+
+        if (vm_name_exists(cfg_file, argv[2])) {
+            printf("A VM named '%s' already exists\nPlease type another name\n", argv[2]);
+            return 1;
+        }
+
+        mkdir(cfg_dir, 0755); 
+        FILE *config = fopen(cfg_file, "a");
         if (config == NULL) {
             printf("No config file found\n");
             return 1;
         }
+        fseek(config, 0, SEEK_END);
+            if (ftell(config) == 0) {
+                fprintf(config, "# qemu-vault config file\n# Format: <vm_name>|<qemu_parameters>\n# This file can be edited manually\n");
+            }
         fprintf(config, "%s|%s\n", argv[2], argv[3]);
 
         fclose(config);
 
-        printf("VM '%s' added!\n", argv[2]);
+        printf("VM '%s' added!\nTo edit its parameters, modify the config file : %s\n", argv[2], cfg_file);
         return 0;
     }
     else {
-    FILE *config = fopen(config_file, "r");
+    FILE *config = fopen(cfg_file, "r");
 
     if (config == NULL) {
-        printf("No config file found\n");
+        printf("No config file found, could be a path error\n");
         return 1;
     }
 
@@ -185,13 +242,20 @@ int main(int argc, char *argv[])
         *separator = '\0';
 
         char *vm_name = line;
-        char *command = separator + 1;
+        char *qemu_command = separator + 1;
 
-        command[strcspn(command, "\n")] = '\0';
+        qemu_command[strcspn(qemu_command, "\n")] = '\0';
 
         if (strcmp(vm_name, argv[1]) == 0) {
+            if (!qemu_check()) {
+                fprintf(stderr,
+                        "QEMU not found, needs to be installed. if already installed, check the path\n");
+                fclose(config);
+                return 1;
+            }
+
             printf("Starting '%s'...\n", vm_name);
-            system(command);
+            system(qemu_command);
 
             found = 1;
             break;
@@ -208,4 +272,4 @@ int main(int argc, char *argv[])
     return 0;
 }
     return 0;
-}
+} 
